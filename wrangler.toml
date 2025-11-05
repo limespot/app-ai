@@ -1,0 +1,69 @@
+# Cloudflare Workers Configuration
+# Documentation: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "app-ai"
+main = "src/index.js"
+compatibility_date = "2024-11-27"
+
+# Account ID
+account_id = "771ea33ba0e0d2d42b93212bd535509d"
+
+# Worker limits
+[limits]
+cpu_ms = 50000
+
+# Local development server settings
+[dev]
+ip = "127.0.0.1"
+port = 8787
+local_protocol = "http"
+
+# Production variables (default - used by Cloudflare auto-deploy from GitHub)
+# CLAUDE_API_KEY set via Cloudflare Dashboard (encrypted secret)
+[vars]
+ENVIRONMENT = "production"
+BRAIN_API_URL = "https://personalizer.io"
+
+# Local development environment (used by wrangler dev --env dev)
+# CLAUDE_API_KEY loaded from .dev.vars file (gitignored)
+[env.dev.vars]
+ENVIRONMENT = "local"
+BRAIN_API_URL = "http://localhost:5000"
+
+# Route configuration (optional - uncomment and configure for custom domains)
+# routes = [
+#   { pattern = "app-ai.personalizer.io/*", zone_name = "personalizer.io" }
+# ]
+
+# Staging environment (commented out - not in use)
+# [env.staging]
+# name = "app-ai-staging"
+# vars = { ENVIRONMENT = "staging", BRAIN_API_URL = "https://staging.personalizer.io" }
+
+# Observability
+[observability]
+enabled = true
+
+# Compatibility flags for latest features
+compatibility_flags = []
+
+# Build configuration
+[build]
+command = ""
+
+# Note: Configuration and secrets management
+# Local dev: Public config in [env.dev.vars], secrets in .dev.vars (gitignored)
+# Production: Public config in [vars], secrets via Cloudflare Dashboard (encrypted)
+
+# KV Namespaces (optional - for storing prompts dynamically)
+# Uncomment if you want to use KV storage for system prompts
+# [[kv_namespaces]]
+# binding = "PROMPTS_KV"
+# id = "your-kv-namespace-id"
+# preview_id = "your-preview-kv-namespace-id"
+
+# R2 Buckets (optional - for storing large files)
+# [[r2_buckets]]
+# binding = "FILES_BUCKET"
+# bucket_name = "app-ai-files"
+# preview_bucket_name = "app-ai-files-preview"

@@ -1,0 +1,30 @@
+{
+  "name": "app-ai",
+  "version": "1.0.0",
+  "description": "App AI service for LimeSpot - Claude API integration for Cloudflare Workers",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "vitest",
+    "update-deps": "npm update && npm audit fix"
+  },
+  "keywords": [
+    "proxy",
+    "claude",
+    "anthropic",
+    "ai",
+    "cloudflare",
+    "workers"
+  ],
+  "author": "LimeSpot",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "wrangler": "^3.114.15",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {}
+}
