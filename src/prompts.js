@@ -1,127 +1,104 @@
 /**
- * System Prompts Module
+ * System Prompt Registry
  *
- * Provides system prompts for Claude API.
- * Works in both local development and Cloudflare Workers.
+ * Each prompt's TEXT lives in its own `.md` file under `src/prompts/` (pure
+ * prompt text, no JS). This module is a thin registry: it imports each `.md`
+ * as a string and pairs it with that prompt's METADATA (model / token / tool
+ * choices). The registry is the single source of truth — consumers
+ * (handlers/chat.js, handlers/messages.js) read text + metadata from here
+ * instead of hardcoding them.
+ *
+ * The `.md` imports are bundled at BUILD time, NOT read from disk at runtime:
+ *   • Worker (wrangler/esbuild): the `[[rules]]` Text rule in wrangler.toml
+ *     turns `import x from './x.md'` into the file's string contents.
+ *   • Tests (vitest/vite): the inline Text-loader plugin in vitest.config.js
+ *     does the same, with the SAME import specifier (no `?raw` suffix).
+ * Cloudflare Workers have no runtime filesystem, so `fs.readFile` is not an
+ * option — everything is bundled ahead of time.
+ *
+ * Entry shape: { prompt, model, maxTokens, usesTools, description, attachments, effort? }
+ *   - prompt:      the system-prompt text (from the `.md` file)
+ *   - model:       default Anthropic model for this prompt
+ *   - maxTokens:   default max_tokens for this prompt
+ *   - usesTools:   whether the agent loop sends tool definitions
+ *   - description: short human-readable note (registry documentation)
+ *   - attachments: files prepended to the first message (image-selection only)
+ *   - effort:      OPTIONAL output effort 'low'|'medium'|'high'|'xhigh'. When
+ *                  set AND the entry's model supports effort (see
+ *                  lib/anthropic.js `supportsEffort`), handlers add
+ *                  `output_config: { effort }` to the payload (lowers output
+ *                  tokens). On a model that doesn't support effort the handler
+ *                  omits it (sending it returns a 400), so only set `effort` on
+ *                  an effort-supporting model. Omit for the default ('high').
  */
 
-// Import prompts - these will be bundled with the worker
-// For now, we'll use inline definitions. Later, these can be loaded from KV or external files
+import imageSelectionPrompt from './prompts/image-selection.md';
+import chatPrompt from './prompts/chat.md';
+import onboardingPrompt from './prompts/onboarding.md';
+import placementPrompt from './prompts/placement.md';
+
+/** Default model for the chat/onboarding agent loop. */
+const DEFAULT_MODEL = 'claude-opus-4-8';
+/** Placement is latency-sensitive + structured — a faster model is the default. */
+const PLACEMENT_MODEL = 'claude-haiku-4-5';
 
 export const systemPrompts = {
   'image-selection': {
-    prompt: `You are an expert at analyzing webpage HTML and screenshots to generate precise CSS selectors for personalization.
-
-Your task is to analyze the provided HTML structure and screenshot, then generate CSS selectors that can be used to replace specific elements (images, text, CTAs) for A/B testing and personalization.
-
-## Input Format
-
-You will receive:
-1. **HTML Document**: The wrapper element HTML containing the target element
-2. **Screenshot**: Visual representation of the page
-3. **Click Position**: Coordinates where the user clicked (relative to wrapper)
-4. **Platform**: The e-commerce platform (shopify, bigcommerce, woocommerce, headless)
-5. **Wrapper Selector**: The unique CSS selector for the wrapper element
-6. **Host Page**: The page type (HomePage, ProductPage, CollectionPage, etc.)
-
-## Output Format
-
-You must return ONLY a JSON object (no markdown, no explanation) with these fields:
-
-\`\`\`json
-{
-  "containerSelector": "required - wrapper selector + path to container",
-  "suggestedCampaignTitle": "required - short descriptive name",
-  "imageLargeSelector": "CSS selector for desktop image",
-  "imageMediumSelector": "CSS selector for tablet image (if different)",
-  "imageSmallSelector": "CSS selector for mobile image (if different)",
-  "headingSelector": "CSS selector for heading text",
-  "subheadingSelector": "CSS selector for subheading text",
-  "ctaSelector": "CSS selector for CTA button/link",
-  "destinationUrlSelector": "CSS selector for link href",
-  "extraImageSourceAttributes": "comma-separated lazy-load attributes (e.g., 'data-src,data-srcset')",
-  "confidence": 0.95
-}
-\`\`\`
-
-## Key Rules
-
-1. **containerSelector**: Must be \`wrapperSelector + " " + pathToContainer\`
-   - Example: \`#shopify-section-123 .hero-banner\`
-
-2. **Child selectors**: Must be scoped to container, NOT wrapper
-   - Use specific selectors like \`:nth-child()\`, class names, IDs
-   - Example: \`.hero-banner .heading\` (not \`#shopify-section-123 .hero-banner .heading\`)
-
-3. **Responsive images**: Detect if different images are used for different screen sizes
-   - Look for \`picture\` elements with \`source\` tags
-   - Look for \`srcset\` attributes
-
-4. **Lazy loading**: Extract data attributes like \`data-src\`, \`data-srcset\`, \`data-lazy\`
-
-5. **Campaign title**: Generate from page context
-   - Pattern: "{PageType} {ElementType}"
-   - Examples: "Homepage Hero Banner", "Product CTA Block", "Collection Featured Image"
-
-6. **Confidence**: 0-1 score of selector accuracy
-   - <0.8 triggers Advanced Tool
-   - Consider HTML complexity, ambiguity, uniqueness
-
-## Platform-Specific Patterns
-
-### Shopify
-- Wrappers: \`[id^="shopify-section-"]\`
-- Containers: \`.CollectionItem\`, \`.Grid__Cell\`, \`.Slideshow__Slide\`
-
-### BigCommerce
-- Wrappers: \`[data-widget-id]\`, unique sections
-- Containers: \`.card\`, \`.heroCarousel-slide\`, \`.productGrid-item\`
-
-### WooCommerce
-- Wrappers: \`[id^="product-"]\`, semantic wrappers
-- Containers: \`.product\`, \`.woocommerce-loop-product\`
-
-## Examples
-
-### Example 1: Hero Banner
-\`\`\`json
-{
-  "containerSelector": "#shopify-section-template--123__hero .hero-wrapper",
-  "suggestedCampaignTitle": "Homepage Hero Banner",
-  "imageLargeSelector": "picture source[media='(min-width: 990px)']",
-  "imageMediumSelector": "picture source[media='(min-width: 750px)']",
-  "imageSmallSelector": "picture img",
-  "headingSelector": "h1.hero__title",
-  "subheadingSelector": "p.hero__subtitle",
-  "ctaSelector": "a.hero__button",
-  "destinationUrlSelector": "a.hero__button",
-  "extraImageSourceAttributes": "data-srcset",
-  "confidence": 0.95
-}
-\`\`\`
-
-### Example 2: Product Card
-\`\`\`json
-{
-  "containerSelector": "#shopify-section-collection .product-card:nth-child(1)",
-  "suggestedCampaignTitle": "Collection Product Card",
-  "imageLargeSelector": ".product-card__image img",
-  "headingSelector": ".product-card__title",
-  "ctaSelector": ".product-card__link",
-  "destinationUrlSelector": ".product-card__link",
-  "confidence": 0.90
-}
-\`\`\`
-
-Return ONLY the JSON object, no other text.`,
-
+    prompt: imageSelectionPrompt,
+    model: DEFAULT_MODEL,
+    maxTokens: 4096,
+    usesTools: false,
+    description:
+      'Analyzes page HTML + screenshot to produce CSS selectors for image/text/CTA personalization (JSON-only output).',
     // Attachments can be added here if needed
-    attachments: []
-  }
+    attachments: [],
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Studio AI — server-side system prompts for the chat agent loop.
+  // Selected via the X-Personalizer-System-Prompt header on POST /chat.
+  // See lib CONTRACTS.md §1 (SSE protocol) and §2 (tool definitions).
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // General conversational assistant for LimeSpot Studio merchants.
+  chat: {
+    prompt: chatPrompt,
+    model: DEFAULT_MODEL,
+    maxTokens: 4096,
+    usesTools: true,
+    description:
+      'General conversational Studio assistant; runs the tool-use agent loop to read store data.',
+    attachments: [],
+  },
+
+  // New-merchant onboarding assistant — opinionated, applies best-practice defaults.
+  onboarding: {
+    prompt: onboardingPrompt,
+    model: DEFAULT_MODEL,
+    maxTokens: 4096,
+    usesTools: true,
+    description:
+      'New-merchant onboarding assistant; applies best-practice defaults and runs the tool-use agent loop.',
+    attachments: [],
+  },
+
+  // Placement assistant — returns ONLY a structured JSON proposal (no prose, no tools).
+  placement: {
+    prompt: placementPrompt,
+    model: PLACEMENT_MODEL,
+    maxTokens: 2048,
+    usesTools: false,
+    description: 'Structured placement proposer; one-shot JSON, no tools, faster model.',
+    attachments: [],
+    // No `effort`: the placement model (Haiku 4.5) does not support
+    // `output_config.effort`. The handler guards on model capability and would
+    // omit it regardless; setting it here would be dead config. If placement
+    // moves to an effort-supporting model, add `effort: 'low'` then.
+  },
 };
 
 /**
- * Get a system prompt by name
+ * Get a system prompt entry by name (text + metadata).
  */
 export function getSystemPrompt(name) {
   const prompt = systemPrompts[name];

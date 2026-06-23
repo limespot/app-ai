@@ -4,6 +4,9 @@
 name = "app-ai"
 main = "src/index.js"
 compatibility_date = "2024-11-27"
+# Compatibility flags for latest Workers runtime features (none needed yet).
+# Must be a top-level key — placing it under a [table] mis-parses as that table's field.
+compatibility_flags = []
 
 # Account ID
 account_id = "771ea33ba0e0d2d42b93212bd535509d"
@@ -44,12 +47,19 @@ BRAIN_API_URL = "http://localhost:5000"
 [observability]
 enabled = true
 
-# Compatibility flags for latest features
-compatibility_flags = []
-
 # Build configuration
 [build]
 command = ""
+
+# Bundle system-prompt .md files as raw text at build time.
+# Workers have no runtime filesystem, so `import x from './prompts/chat.md'`
+# must resolve to the file's string contents during esbuild. This Text rule
+# makes that import return the raw markdown. vitest mirrors it with an inline
+# Vite plugin in vitest.config.js (same import specifier, no `?raw` suffix).
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
 
 # Note: Configuration and secrets management
 # Local dev: Public config in [env.dev.vars], secrets in .dev.vars (gitignored)
@@ -61,6 +71,15 @@ command = ""
 # binding = "PROMPTS_KV"
 # id = "your-kv-namespace-id"
 # preview_id = "your-preview-kv-namespace-id"
+
+# Files API content-hash dedup store (src/lib/file-dedup.js): maps
+# SHA-256(content) → { fileId, createdAt } so identical HTML/screenshot bytes
+# reuse an existing Anthropic file_id instead of re-uploading (the Files API
+# does not dedup by content). The code no-ops when this binding is absent.
+[[kv_namespaces]]
+binding = "FILES_KV"
+id = "eb048ab9979f46ce93d8b0dfcdb9d58f"
+preview_id = "b524e2d6d53d482ead49f7ea60881dbd"
 
 # R2 Buckets (optional - for storing large files)
 # [[r2_buckets]]

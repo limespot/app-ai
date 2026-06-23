@@ -1,0 +1,52 @@
+name: Verify Caching (pre-release gate)
+
+# Pre-release token-savings gate (scripts/verify-caching.mjs). It is an
+# INTEGRATION check against the DEPLOYED worker — it needs a master
+# X-Personalizer-Context-ID and a reachable /chat + /files target, so it cannot
+# run in plain push-CI without secrets. It runs ONLY on manual dispatch, and
+# only when the required repo secret is configured (the guard step exits the job
+# cleanly otherwise, so a fork or unconfigured repo never fails here).
+#
+# Required repo secret:
+#   APP_AI_CONTEXT_ID  — a valid master context-ID for a dev store (lsdev1).
+# Optional:
+#   APP_AI_TARGET      — worker base URL (defaults to the production worker).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify-caching:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard — require APP_AI_CONTEXT_ID secret
+        env:
+          APP_AI_CONTEXT_ID: ${{ secrets.APP_AI_CONTEXT_ID }}
+        run: |
+          if [ -z "$APP_AI_CONTEXT_ID" ]; then
+            echo "APP_AI_CONTEXT_ID secret is not configured — skipping the caching gate."
+            echo "Add it under Settings → Secrets to enable this workflow."
+            exit 0
+          fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+        id: guard
+
+      - name: Setup Node
+        if: steps.guard.outputs.ok == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.guard.outputs.ok == 'true'
+        run: npm ci
+
+      - name: Run token-savings gate
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          APP_AI_CONTEXT_ID: ${{ secrets.APP_AI_CONTEXT_ID }}
+          APP_AI_TARGET: ${{ secrets.APP_AI_TARGET }}
+        run: npm run verify:caching
