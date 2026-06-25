@@ -23,9 +23,11 @@ local_protocol = "http"
 
 # Production variables (default - used by Cloudflare auto-deploy from GitHub)
 # CLAUDE_API_KEY set via Cloudflare Dashboard (encrypted secret)
+# BRAIN_API_URL points at preview for Studio AI chat testing; set back to
+# https://personalizer.io to route at production Brain.
 [vars]
 ENVIRONMENT = "production"
-BRAIN_API_URL = "https://personalizer.io"
+BRAIN_API_URL = "https://preview.personalizer.io"
 
 # Local development environment (used by wrangler dev --env dev)
 # CLAUDE_API_KEY loaded from .dev.vars file (gitignored)
